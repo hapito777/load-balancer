@@ -1,0 +1,54 @@
+global:
+  bind: "0.0.0.0"
+  log_level: "info"
+
+frontends:
+  - name: http
+    protocol: http
+    port: 8080
+    backend_pool: web-backends
+
+  - name: tcp-db
+    protocol: tcp
+    port: 5432
+    backend_pool: db-backends
+
+backend_pools:
+  - name: web-backends
+    algorithm: round_robin
+    health_check:
+      enabled: true
+      interval: 10s
+      timeout: 2s
+      path: /health
+    rate_limit:
+      enabled: true
+      requests_per_second: 1000
+      burst: 2000
+    backends:
+      - address: "127.0.0.1:8001"
+        weight: 1
+      - address: "127.0.0.1:8002"
+        weight: 2
+      - address: "127.0.0.1:8003"
+        weight: 1
+
+  - name: db-backends
+    algorithm: least_connections
+    health_check:
+      enabled: true
+      interval: 5s
+      timeout: 1s
+    backends:
+      - address: "127.0.0.1:5433"
+        weight: 1
+      - address: "127.0.0.1:5434"
+        weight: 1
+
+dashboard:
+  enabled: true
+  port: 9000
+
+metrics:
+  enabled: true
+  port: 9001

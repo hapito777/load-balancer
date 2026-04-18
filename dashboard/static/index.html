@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Load Balancer Dashboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #1a1a2e;
+      --card:    #16213e;
+      --accent:  #0f3460;
+      --primary: #e94560;
+      --text:    #e0e0e0;
+      --sub:     #a0a0b0;
+      --green:   #4ade80;
+      --red:     #f87171;
+      --yellow:  #facc15;
+      --border:  #2a2a4e;
+      --radius:  8px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 56px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: .5px;
+    }
+    .logo-icon {
+      width: 32px; height: 32px;
+      background: var(--primary);
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .uptime-badge {
+      background: var(--accent);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 4px 14px;
+      font-size: 13px;
+      color: var(--sub);
+    }
+    .uptime-badge span { color: var(--text); font-weight: 600; }
+
+    .ws-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: var(--sub);
+    }
+    .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--red);
+      transition: background .4s;
+    }
+    .dot.connected { background: var(--green); box-shadow: 0 0 6px var(--green); }
+
+    /* ── Tab nav ── */
+    .tab-nav {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      display: flex;
+      gap: 4px;
+    }
+    .tab-btn {
+      background: none;
+      border: none;
+      border-bottom: 3px solid transparent;
+      color: var(--sub);
+      cursor: pointer;
+      font-size: 14px;
+      padding: 12px 16px;
+      transition: color .2s, border-color .2s;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active {
+      color: var(--primary);
+      border-bottom-color: var(--primary);
+    }
+
+    /* ── Tab panels ── */
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── Layout ── */
+    main {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+    }
+
+    h2 {
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--sub);
+      margin-bottom: 14px;
+    }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+    }
+
+    /* ── Summary stats ── */
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 16px;
+    }
+    .stat-card {
+      background: var(--accent);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+    }
+    .stat-card .label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .8px;
+      color: var(--sub);
+      margin-bottom: 6px;
+    }
+    .stat-card .value {
+      font-size: 28px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+    .stat-card .sub-label {
+      font-size: 12px;
+      color: var(--sub);
+      margin-top: 4px;
+    }
+
+    /* ── Traffic charts ── */
+    .chart-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 16px;
+    }
+    .chart-card {
+      background: var(--accent);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+    }
+    .chart-card .chart-name {
+      font-size: 12px;
+      color: var(--sub);
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      margin-bottom: 4px;
+    }
+    .chart-card .chart-rps {
+      font-size: 22px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: var(--text);
+      margin-bottom: 8px;
+      line-height: 1;
+    }
+    .chart-card .chart-rps span {
+      font-size: 12px;
+      font-weight: 400;
+      color: var(--sub);
+    }
+    .chart-card canvas {
+      display: block;
+      width: 100%;
+      height: 44px;
+    }
+
+    /* ── Tables ── */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      text-align: left;
+      padding: 8px 12px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .8px;
+      color: var(--sub);
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    tbody tr { border-bottom: 1px solid var(--border); transition: background .15s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: rgba(255,255,255,.03); }
+    td { padding: 10px 12px; vertical-align: middle; }
+    .num {
+      font-variant-numeric: tabular-nums;
+      font-family: 'Cascadia Code', 'Courier New', monospace;
+    }
+
+    /* ── Health ── */
+    .health { display: inline-flex; align-items: center; gap: 6px; }
+    .health .dot { width: 10px; height: 10px; }
+    .health.ok  .dot  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .health.err .dot  { background: var(--red);   box-shadow: 0 0 6px var(--red);   }
+    .health.ok  .hlbl { color: var(--green); }
+    .health.err .hlbl { color: var(--red);   }
+
+    .status-ok  { color: var(--green); }
+    .status-err { color: var(--red);   }
+
+    /* ── Pool grid ── */
+    .pool-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(580px, 1fr));
+      gap: 20px;
+    }
+    .pool-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .pool-title { font-size: 15px; font-weight: 700; }
+    .algo-badge {
+      font-size: 11px;
+      padding: 2px 10px;
+      border-radius: 12px;
+      background: var(--accent);
+      border: 1px solid var(--border);
+      color: var(--sub);
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+
+    /* ── Backend sparkline cell ── */
+    td canvas { display: block; }
+
+    /* ── Flash ── */
+    .flash-up   { color: var(--green) !important; }
+    .flash-down { color: var(--red)   !important; }
+
+    /* ── Empty ── */
+    .empty { text-align: center; color: var(--sub); padding: 40px 0; font-size: 13px; }
+
+    /* ── Config editor ── */
+    #configPanel {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .config-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .btn {
+      background: var(--accent);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      cursor: pointer;
+      font-size: 13px;
+      padding: 7px 16px;
+      transition: background .15s;
+    }
+    .btn:hover { background: var(--primary); border-color: var(--primary); }
+    .btn-primary { background: var(--primary); border-color: var(--primary); }
+    .btn-primary:hover { filter: brightness(1.15); }
+    #configStatus {
+      font-size: 13px;
+      padding: 4px 10px;
+      border-radius: 4px;
+    }
+    #configStatus.ok  { background: rgba(74,222,128,.15); color: var(--green); }
+    #configStatus.err { background: rgba(248,113,113,.15); color: var(--red);  }
+    #configEditor {
+      background: #0d1117;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: #c9d1d9;
+      font-family: 'Cascadia Code', 'Fira Code', 'Courier New', monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      min-height: 520px;
+      outline: none;
+      padding: 16px;
+      resize: vertical;
+      tab-size: 2;
+      white-space: pre;
+      width: 100%;
+    }
+    #configEditor:focus { border-color: var(--primary); }
+    .config-hint { color: var(--sub); font-size: 12px; }
+
+    @media (max-width: 700px) {
+      .pool-grid { grid-template-columns: 1fr; }
+      main { padding: 14px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">&#9670;</div>
+    Load Balancer
+  </div>
+  <div class="header-right">
+    <div class="uptime-badge">Uptime: <span id="uptime">—</span></div>
+    <div class="ws-status">
+      <div class="dot" id="wsDot"></div>
+      <span id="wsLabel">Connecting…</span>
+    </div>
+  </div>
+</header>
+
+<nav class="tab-nav">
+  <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+  <button class="tab-btn"        data-tab="config">Config Editor</button>
+</nav>
+
+<!-- ── Dashboard tab ── -->
+<div id="tab-dashboard" class="tab-panel active">
+<main>
+
+  <div>
+    <h2>Overview</h2>
+    <div class="summary-grid">
+      <div class="stat-card">
+        <div class="label">Active Connections</div>
+        <div class="value" id="totalConns">0</div>
+        <div class="sub-label">across all frontends</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Requests / sec</div>
+        <div class="value" id="totalRps">0</div>
+        <div class="sub-label">aggregate</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Total Requests</div>
+        <div class="value" id="totalReqs">0</div>
+        <div class="sub-label">since start</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Total Errors</div>
+        <div class="value" id="totalErrors">0</div>
+        <div class="sub-label">since start</div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <h2>Traffic (60s)</h2>
+    <div class="chart-grid" id="trafficCharts">
+      <div class="chart-card" style="color:var(--sub);font-size:13px">Waiting for data…</div>
+    </div>
+  </div>
+
+  <div>
+    <h2>Frontends</h2>
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th><th>Protocol</th><th>Port</th><th>Status</th>
+              <th>Req / s</th><th>Active Conns</th><th>Total Requests</th><th>Errors</th>
+            </tr>
+          </thead>
+          <tbody id="frontendBody">
+            <tr><td colspan="8" class="empty">Waiting for data…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <h2>Backend Pools</h2>
+    <div class="pool-grid" id="poolGrid">
+      <div class="card empty">Waiting for data…</div>
+    </div>
+  </div>
+
+</main>
+</div>
+
+<!-- ── Config editor tab ── -->
+<div id="tab-config" class="tab-panel">
+<main>
+  <div id="configPanel">
+    <div>
+      <h2>Config Editor</h2>
+      <p class="config-hint">Edit the YAML configuration below. Saving will write to disk and trigger a hot-reload.</p>
+    </div>
+    <div class="config-toolbar">
+      <button class="btn btn-primary" id="configSaveBtn">Save &amp; Apply</button>
+      <button class="btn" id="configReloadBtn">Reload from disk</button>
+      <span id="configStatus"></span>
+    </div>
+    <textarea id="configEditor" spellcheck="false"></textarea>
+  </div>
+</main>
+</div>
+
+<script>
+'use strict';
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function fmt(n) {
+  if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+  return String(n);
+}
+
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function safeId(s) {
+  return String(s).replace(/[^a-zA-Z0-9]/g, '_');
+}
+
+function setNum(el, val) {
+  if (!el) return;
+  const prev = parseInt(el.dataset.val || '0', 10);
+  el.dataset.val = val;
+  el.textContent = fmt(val);
+  if (val > prev) {
+    el.classList.add('flash-up');
+    setTimeout(() => el.classList.remove('flash-up'), 600);
+  } else if (val < prev) {
+    el.classList.add('flash-down');
+    setTimeout(() => el.classList.remove('flash-down'), 600);
+  }
+}
+
+function healthHTML(healthy) {
+  const cls = healthy ? 'ok' : 'err';
+  const lbl = healthy ? 'Healthy' : 'Unhealthy';
+  return `<span class="health ${cls}"><span class="dot"></span><span class="hlbl">${lbl}</span></span>`;
+}
+
+// ── History tracking ─────────────────────────────────────────────────────────
+
+const HISTORY = 60;
+const frontendHist  = {};  // name    → number[]  (reqs_per_sec)
+const backendHist   = {};  // address → number[]  (delta total_reqs)
+const backendPrevRq = {};  // address → last total_reqs
+
+function pushHist(map, key, val) {
+  if (!map[key]) map[key] = [];
+  map[key].push(val);
+  if (map[key].length > HISTORY) map[key].shift();
+}
+
+function updateHistories(frontends, pools) {
+  frontends.forEach(f => {
+    pushHist(frontendHist, f.name, f.reqs_per_sec || 0);
+  });
+  pools.forEach(p => {
+    (p.backends || []).forEach(b => {
+      const prev  = backendPrevRq[b.address] || 0;
+      const delta = Math.max(0, (b.total_reqs || 0) - prev);
+      backendPrevRq[b.address] = b.total_reqs || 0;
+      pushHist(backendHist, b.address, delta);
+    });
+  });
+}
+
+// ── Sparkline drawing ────────────────────────────────────────────────────────
+
+function drawSparkline(canvas, data, color) {
+  const dpr = window.devicePixelRatio || 1;
+  const W   = canvas.clientWidth  || canvas.width;
+  const H   = canvas.clientHeight || canvas.height;
+  canvas.width  = W * dpr;
+  canvas.height = H * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, W, H);
+
+  if (!data || data.length < 2) return;
+
+  const max  = Math.max(...data, 1);
+  const step = W / (data.length - 1);
+  const pad  = 2;
+
+  ctx.beginPath();
+  data.forEach((v, i) => {
+    const x = i * step;
+    const y = H - pad - (v / max) * (H - pad * 2);
+    if (i === 0) ctx.moveTo(x, y);
+    else         ctx.lineTo(x, y);
+  });
+  ctx.strokeStyle = color;
+  ctx.lineWidth   = 1.5;
+  ctx.lineJoin    = 'round';
+  ctx.stroke();
+
+  // Fill under the line.
+  ctx.lineTo((data.length - 1) * step, H);
+  ctx.lineTo(0, H);
+  ctx.closePath();
+  ctx.fillStyle = color + '28';
+  ctx.fill();
+}
+
+// ── Render traffic charts ────────────────────────────────────────────────────
+
+function renderTrafficCharts(frontends) {
+  const container = document.getElementById('trafficCharts');
+  if (!frontends.length) {
+    container.innerHTML = '<div class="chart-card" style="color:var(--sub);font-size:13px">No frontends configured.</div>';
+    return;
+  }
+
+  // Build HTML with stable canvas IDs.
+  container.innerHTML = frontends.map(f => {
+    const id  = 'fc-' + safeId(f.name);
+    const rps = f.reqs_per_sec || 0;
+    return `<div class="chart-card">
+      <div class="chart-name">${esc(f.name)} &middot; ${esc(f.protocol.toUpperCase())} :${f.port}</div>
+      <div class="chart-rps">${fmt(rps)} <span>req/s</span></div>
+      <canvas id="${id}"></canvas>
+    </div>`;
+  }).join('');
+
+  // Draw sparklines immediately after setting innerHTML.
+  frontends.forEach(f => {
+    const canvas = document.getElementById('fc-' + safeId(f.name));
+    if (canvas) drawSparkline(canvas, frontendHist[f.name] || [], '#e94560');
+  });
+}
+
+// ── Render frontends table ───────────────────────────────────────────────────
+
+function renderFrontends(frontends) {
+  const tbody = document.getElementById('frontendBody');
+  if (!frontends.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty">No frontends configured.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = frontends.map(f => {
+    const statusCls = f.errors > 0 ? 'status-err' : 'status-ok';
+    const statusTxt = f.errors > 0 ? '&#9888; Degraded' : '&#10003; Active';
+    return `<tr>
+      <td>${esc(f.name)}</td>
+      <td>${esc(f.protocol.toUpperCase())}</td>
+      <td class="num">${f.port}</td>
+      <td class="${statusCls}">${statusTxt}</td>
+      <td class="num">${fmt(f.reqs_per_sec || 0)}</td>
+      <td class="num">${fmt(f.active_conns || 0)}</td>
+      <td class="num">${fmt(f.total_reqs   || 0)}</td>
+      <td class="num" style="${f.errors > 0 ? 'color:var(--red)' : ''}">${fmt(f.errors || 0)}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Render pool cards ────────────────────────────────────────────────────────
+
+function renderPools(pools) {
+  const grid = document.getElementById('poolGrid');
+  if (!pools.length) {
+    grid.innerHTML = '<div class="card empty">No backend pools configured.</div>';
+    return;
+  }
+
+  grid.innerHTML = pools.map(p => {
+    const backends = p.backends || [];
+    const rows = backends.map(b => {
+      const sparkId = 'bk-' + safeId(b.address);
+      return `<tr>
+        <td class="num">${esc(b.address)}</td>
+        <td class="num" style="text-align:center">${b.weight}</td>
+        <td>${healthHTML(b.healthy)}</td>
+        <td class="num">${fmt(b.active_conns || 0)}</td>
+        <td class="num">${fmt(b.total_reqs   || 0)}</td>
+        <td class="num" style="${b.errors > 0 ? 'color:var(--red)' : ''}">${fmt(b.errors || 0)}</td>
+        <td><canvas id="${sparkId}" width="80" height="28"></canvas></td>
+      </tr>`;
+    }).join('');
+
+    return `<div class="card">
+      <div class="pool-header">
+        <span class="pool-title">${esc(p.name)}</span>
+        <span class="algo-badge">${esc(p.algorithm || 'round_robin')}</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Address</th><th style="text-align:center">Wt</th><th>Health</th>
+              <th>Active</th><th>Total</th><th>Errors</th><th>Traffic</th>
+            </tr>
+          </thead>
+          <tbody>${rows || '<tr><td colspan="7" class="empty">No backends.</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Draw backend sparklines after rebuilding HTML.
+  pools.forEach(p => {
+    (p.backends || []).forEach(b => {
+      const canvas = document.getElementById('bk-' + safeId(b.address));
+      if (canvas) drawSparkline(canvas, backendHist[b.address] || [], '#4ade80');
+    });
+  });
+}
+
+// ── Main render ──────────────────────────────────────────────────────────────
+
+function render(data) {
+  document.getElementById('uptime').textContent = data.uptime || '—';
+
+  const frontends = data.frontends || [];
+  const pools     = data.pools     || [];
+
+  updateHistories(frontends, pools);
+
+  let totalConns = 0, totalRps = 0, totalReqs = 0, totalErrors = 0;
+  frontends.forEach(f => {
+    totalConns  += f.active_conns  || 0;
+    totalRps    += f.reqs_per_sec  || 0;
+    totalReqs   += f.total_reqs    || 0;
+    totalErrors += f.errors        || 0;
+  });
+  setNum(document.getElementById('totalConns'),  totalConns);
+  setNum(document.getElementById('totalRps'),    totalRps);
+  setNum(document.getElementById('totalReqs'),   totalReqs);
+  setNum(document.getElementById('totalErrors'), totalErrors);
+
+  renderTrafficCharts(frontends);
+  renderFrontends(frontends);
+  renderPools(pools);
+}
+
+// ── WebSocket ────────────────────────────────────────────────────────────────
+
+const wsDot   = document.getElementById('wsDot');
+const wsLabel = document.getElementById('wsLabel');
+let ws;
+let reconnectDelay = 1000;
+
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+  ws.addEventListener('open', () => {
+    wsDot.className     = 'dot connected';
+    wsLabel.textContent = 'Live';
+    reconnectDelay      = 1000;
+  });
+
+  ws.addEventListener('message', evt => {
+    try { render(JSON.parse(evt.data)); }
+    catch (e) { console.error('parse error', e); }
+  });
+
+  ws.addEventListener('close', () => {
+    wsDot.className     = 'dot';
+    wsLabel.textContent = `Reconnecting in ${reconnectDelay / 1000}s…`;
+    setTimeout(() => {
+      connect();
+      reconnectDelay = Math.min(reconnectDelay * 2, 15000);
+    }, reconnectDelay);
+  });
+
+  ws.addEventListener('error', () => ws.close());
+}
+
+connect();
+
+// ── Tab switching ────────────────────────────────────────────────────────────
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+
+    if (btn.dataset.tab === 'config') loadConfig();
+  });
+});
+
+// ── Config editor ────────────────────────────────────────────────────────────
+
+const configEditor = document.getElementById('configEditor');
+const configStatus = document.getElementById('configStatus');
+
+function setStatus(msg, isErr) {
+  configStatus.textContent = msg;
+  configStatus.className   = isErr ? 'err' : 'ok';
+  if (msg) setTimeout(() => { configStatus.textContent = ''; configStatus.className = ''; }, 4000);
+}
+
+async function loadConfig() {
+  try {
+    const res = await fetch('/api/config');
+    if (!res.ok) throw new Error(await res.text());
+    configEditor.value = await res.text();
+    setStatus('', false);
+  } catch (e) {
+    setStatus('Load failed: ' + e.message, true);
+  }
+}
+
+document.getElementById('configSaveBtn').addEventListener('click', async () => {
+  const body = configEditor.value;
+  try {
+    const res = await fetch('/api/config', {
+      method:  'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body,
+    });
+    if (!res.ok) throw new Error(await res.text());
+    setStatus('Saved and applied', false);
+  } catch (e) {
+    setStatus('Save failed: ' + e.message, true);
+  }
+});
+
+document.getElementById('configReloadBtn').addEventListener('click', loadConfig);
+
+// Tab indent in textarea.
+configEditor.addEventListener('keydown', e => {
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const s = configEditor.selectionStart;
+    const v = configEditor.value;
+    configEditor.value = v.slice(0, s) + '  ' + v.slice(configEditor.selectionEnd);
+    configEditor.selectionStart = configEditor.selectionEnd = s + 2;
+  }
+});
+</script>
+</body>
+</html>
