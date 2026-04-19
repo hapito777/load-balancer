@@ -46,7 +46,7 @@ func main() {
 	type poolEntry struct {
 		pool     config.BackendPool
 		backends []*balancer.Backend
-		bal      balancer.Balancer
+		bal      *balancer.Ref // hot-swappable; frontends hold this pointer
 		checker  *health.Checker
 		limiter  *ratelimit.Limiter
 	}
@@ -57,16 +57,15 @@ func main() {
 		for _, poolCfg := range cfg.Pools {
 			backends := make([]*balancer.Backend, 0, len(poolCfg.Backends))
 			for _, bc := range poolCfg.Backends {
-				b := &balancer.Backend{
+				backends = append(backends, &balancer.Backend{
 					Address: bc.Address,
 					Weight:  bc.Weight,
-				}
-				backends = append(backends, b)
+				})
 			}
 
 			bal, err := balancer.New(poolCfg.Algorithm, backends)
 			if err != nil {
-				slog.Error("create balancer", "pool", poolCfg.Algorithm, "err", err)
+				slog.Error("create balancer", "pool", poolCfg.Name, "err", err)
 				continue
 			}
 
@@ -81,12 +80,23 @@ func main() {
 				)
 			}
 
-			poolMap[poolCfg.Name] = &poolEntry{
-				pool:     poolCfg,
-				backends: backends,
-				bal:      bal,
-				checker:  checker,
-				limiter:  limiter,
+			if existing, ok := poolMap[poolCfg.Name]; ok {
+				// Hot-swap: stop the old checker and atomically replace the
+				// inner balancer. Running frontends and the dashboard hold *Ref
+				// so they immediately route to the new backends.
+				existing.checker.Stop()
+				existing.bal.Swap(bal)
+				existing.checker = checker
+				existing.pool = poolCfg
+				existing.backends = backends
+			} else {
+				poolMap[poolCfg.Name] = &poolEntry{
+					pool:     poolCfg,
+					backends: backends,
+					bal:      balancer.NewRef(bal),
+					checker:  checker,
+					limiter:  limiter,
+				}
 			}
 		}
 	}
@@ -102,17 +112,21 @@ func main() {
 
 	bindCtx := proxy.WithBind(rootCtx, cfg.Global.Bind)
 
-	dashPools := make([]dashboard.Pool, 0, len(poolMap))
-	for name, entry := range poolMap {
-		dashPools = append(dashPools, dashboard.Pool{
-			Name:      name,
-			Algorithm: entry.pool.Algorithm,
-			Balancer:  entry.bal,
-		})
+	buildDashPools := func() []dashboard.Pool {
+		pools := make([]dashboard.Pool, 0, len(poolMap))
+		for name, entry := range poolMap {
+			pools = append(pools, dashboard.Pool{
+				Name:      name,
+				Algorithm: entry.pool.Algorithm,
+				Balancer:  entry.bal,
+			})
+		}
+		return pools
 	}
 
+	var ds *dashboard.Server
 	if cfg.Dashboard.Enabled {
-		ds := dashboard.NewServer(cfg.Dashboard.Port, metricStore, dashPools, *configPath)
+		ds = dashboard.NewServer(cfg.Dashboard.Port, metricStore, buildDashPools(), *configPath)
 		if err := ds.Start(bindCtx); err != nil {
 			slog.Error("dashboard start failed", "err", err)
 		}
@@ -135,10 +149,6 @@ func main() {
 	}
 
 	// ── Start frontends ───────────────────────────────────────────────────────
-	type frontendHandle interface {
-		Shutdown()
-	}
-
 	var tcpFrontends []*proxy.TCPFrontend
 	var httpFrontends []*proxy.HTTPFrontend
 	var udpFrontends []*proxy.UDPFrontend
@@ -188,8 +198,11 @@ func main() {
 	// ── Config hot-reload ─────────────────────────────────────────────────────
 	loader.OnChange(func(newCfg *config.Config) {
 		slog.Info("applying hot-reloaded config")
-		// For simplicity, rebuild pool health checkers; frontends keep running.
 		buildPools(newCfg)
+		if ds != nil {
+			ds.SetPools(buildDashPools())
+			ds.NotifyReload()
+		}
 	})
 
 	go func() {
@@ -225,7 +238,6 @@ func main() {
 		f.Shutdown()
 	}
 
-	// Stop health checkers.
 	for _, entry := range poolMap {
 		entry.checker.Stop()
 		if entry.limiter != nil {

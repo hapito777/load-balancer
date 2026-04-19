@@ -17,6 +17,7 @@
       --green:   #4ade80;
       --red:     #f87171;
       --yellow:  #facc15;
+      --blue:    #63b3ed;
       --border:  #2a2a4e;
       --radius:  8px;
     }
@@ -63,7 +64,7 @@
     .header-right {
       display: flex;
       align-items: center;
-      gap: 20px;
+      gap: 16px;
     }
 
     .uptime-badge {
@@ -177,6 +178,27 @@
       margin-top: 4px;
     }
 
+    /* ── Recommendations ── */
+    .rec-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .rec-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 11px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .rec-item.ok      { background: rgba(74,222,128,.08); border: 1px solid rgba(74,222,128,.2); color: var(--green); }
+    .rec-item.warning { background: rgba(250,204,21,.08);  border: 1px solid rgba(250,204,21,.2);  color: var(--yellow); }
+    .rec-item.error   { background: rgba(248,113,113,.08); border: 1px solid rgba(248,113,113,.2); color: var(--red); }
+    .rec-item.info    { background: rgba(99,179,237,.08);  border: 1px solid rgba(99,179,237,.2);  color: var(--blue); }
+    .rec-icon { font-size: 15px; flex-shrink: 0; margin-top: 1px; }
+
     /* ── Traffic charts ── */
     .chart-grid {
       display: grid;
@@ -272,7 +294,6 @@
       letter-spacing: .5px;
     }
 
-    /* ── Backend sparkline cell ── */
     td canvas { display: block; }
 
     /* ── Flash ── */
@@ -333,9 +354,103 @@
     #configEditor:focus { border-color: var(--primary); }
     .config-hint { color: var(--sub); font-size: 12px; }
 
+    /* ── Toast ── */
+    .toast {
+      position: fixed;
+      top: 68px;
+      right: 24px;
+      z-index: 500;
+      background: var(--card);
+      border: 1px solid var(--green);
+      border-radius: 8px;
+      padding: 10px 18px;
+      font-size: 13px;
+      color: var(--green);
+      box-shadow: 0 4px 16px rgba(0,0,0,.4);
+      opacity: 0;
+      transform: translateY(-8px);
+      transition: opacity .3s, transform .3s;
+      pointer-events: none;
+    }
+    .toast.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* ── Tour ── */
+    .tour-highlight {
+      outline: 2px solid var(--primary) !important;
+      outline-offset: 5px;
+      border-radius: var(--radius);
+      position: relative;
+      z-index: 201;
+    }
+    .tour-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.45);
+      z-index: 200;
+      pointer-events: none;
+    }
+    .tour-backdrop.visible { display: block; }
+    .tour-panel {
+      display: none;
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 300;
+      background: var(--card);
+      border: 1px solid var(--primary);
+      border-radius: 12px;
+      padding: 22px 26px;
+      width: min(500px, calc(100vw - 48px));
+      box-shadow: 0 8px 40px rgba(0,0,0,.6);
+    }
+    .tour-panel.visible { display: block; }
+    .tour-eyebrow {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--primary);
+      margin-bottom: 6px;
+    }
+    .tour-title {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .tour-body {
+      color: var(--sub);
+      font-size: 13px;
+      line-height: 1.65;
+      margin-bottom: 18px;
+    }
+    .tour-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .tour-dots {
+      display: flex;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .tour-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--border);
+      transition: background .2s;
+    }
+    .tour-dot.active { background: var(--primary); }
+    .tour-actions { display: flex; gap: 8px; }
+
     @media (max-width: 700px) {
       .pool-grid { grid-template-columns: 1fr; }
       main { padding: 14px; }
+      .tour-panel { bottom: 12px; }
     }
   </style>
 </head>
@@ -348,6 +463,7 @@
   </div>
   <div class="header-right">
     <div class="uptime-badge">Uptime: <span id="uptime">—</span></div>
+    <button class="btn" id="tourBtn" title="Take a guided tour of the dashboard">&#9654; Tour</button>
     <div class="ws-status">
       <div class="dot" id="wsDot"></div>
       <span id="wsLabel">Connecting…</span>
@@ -364,7 +480,7 @@
 <div id="tab-dashboard" class="tab-panel active">
 <main>
 
-  <div>
+  <div id="overviewSection">
     <h2>Overview</h2>
     <div class="summary-grid">
       <div class="stat-card">
@@ -390,14 +506,21 @@
     </div>
   </div>
 
-  <div>
+  <div id="recommendationsSection">
+    <h2>Recommendations</h2>
+    <div id="recommendationsPanel" class="rec-list">
+      <div class="rec-item info"><span class="rec-icon">&#8505;</span>Waiting for data…</div>
+    </div>
+  </div>
+
+  <div id="trafficSection">
     <h2>Traffic (60s)</h2>
     <div class="chart-grid" id="trafficCharts">
       <div class="chart-card" style="color:var(--sub);font-size:13px">Waiting for data…</div>
     </div>
   </div>
 
-  <div>
+  <div id="frontendsSection">
     <h2>Frontends</h2>
     <div class="card">
       <div class="table-wrap">
@@ -416,7 +539,7 @@
     </div>
   </div>
 
-  <div>
+  <div id="poolsSection">
     <h2>Backend Pools</h2>
     <div class="pool-grid" id="poolGrid">
       <div class="card empty">Waiting for data…</div>
@@ -432,7 +555,7 @@
   <div id="configPanel">
     <div>
       <h2>Config Editor</h2>
-      <p class="config-hint">Edit the YAML configuration below. Saving will write to disk and trigger a hot-reload.</p>
+      <p class="config-hint">Edit the YAML configuration below. Saving writes to disk and triggers an instant hot-reload — no restart needed.</p>
     </div>
     <div class="config-toolbar">
       <button class="btn btn-primary" id="configSaveBtn">Save &amp; Apply</button>
@@ -443,6 +566,25 @@
   </div>
 </main>
 </div>
+
+<!-- ── Tour ── -->
+<div id="tourBackdrop" class="tour-backdrop"></div>
+<div id="tourPanel" class="tour-panel">
+  <div class="tour-eyebrow" id="tourEyebrow">Step 1 of 7</div>
+  <div class="tour-title"   id="tourTitle"></div>
+  <div class="tour-body"    id="tourBody"></div>
+  <div class="tour-footer">
+    <div class="tour-dots" id="tourDots"></div>
+    <div class="tour-actions">
+      <button class="btn" id="tourPrevBtn">&#8592; Prev</button>
+      <button class="btn btn-primary" id="tourNextBtn">Next &#8594;</button>
+      <button class="btn" id="tourCloseBtn">Skip</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Toast ── -->
+<div id="toast" class="toast"></div>
 
 <script>
 'use strict';
@@ -485,12 +627,23 @@ function healthHTML(healthy) {
   return `<span class="health ${cls}"><span class="dot"></span><span class="hlbl">${lbl}</span></span>`;
 }
 
+// ── Toast ────────────────────────────────────────────────────────────────────
+
+let toastTimer;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('visible');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('visible'), 3500);
+}
+
 // ── History tracking ─────────────────────────────────────────────────────────
 
 const HISTORY = 60;
-const frontendHist  = {};  // name    → number[]  (reqs_per_sec)
-const backendHist   = {};  // address → number[]  (delta total_reqs)
-const backendPrevRq = {};  // address → last total_reqs
+const frontendHist  = {};
+const backendHist   = {};
+const backendPrevRq = {};
 
 function pushHist(map, key, val) {
   if (!map[key]) map[key] = [];
@@ -523,13 +676,10 @@ function drawSparkline(canvas, data, color) {
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, W, H);
-
   if (!data || data.length < 2) return;
-
   const max  = Math.max(...data, 1);
   const step = W / (data.length - 1);
   const pad  = 2;
-
   ctx.beginPath();
   data.forEach((v, i) => {
     const x = i * step;
@@ -541,13 +691,68 @@ function drawSparkline(canvas, data, color) {
   ctx.lineWidth   = 1.5;
   ctx.lineJoin    = 'round';
   ctx.stroke();
-
-  // Fill under the line.
   ctx.lineTo((data.length - 1) * step, H);
   ctx.lineTo(0, H);
   ctx.closePath();
   ctx.fillStyle = color + '28';
   ctx.fill();
+}
+
+// ── Recommendations ──────────────────────────────────────────────────────────
+
+function computeRecommendations(frontends, pools) {
+  const items = [];
+
+  pools.forEach(p => {
+    const backends = p.backends || [];
+    if (backends.length === 0) return;
+
+    const unhealthy = backends.filter(b => !b.healthy);
+
+    if (unhealthy.length === backends.length) {
+      items.push({ type: 'error', icon: '&#9888;',
+        msg: `All backends in pool <strong>${esc(p.name)}</strong> are unhealthy — requests will fail.` });
+    } else {
+      unhealthy.forEach(b => {
+        items.push({ type: 'warning', icon: '&#9888;',
+          msg: `Backend <strong>${esc(b.address)}</strong> in pool <strong>${esc(p.name)}</strong> is unhealthy.` });
+      });
+    }
+
+    if (backends.length === 1) {
+      items.push({ type: 'warning', icon: '&#8505;',
+        msg: `Pool <strong>${esc(p.name)}</strong> has only one backend — no redundancy if it fails. Consider adding more.` });
+    }
+  });
+
+  frontends.forEach(f => {
+    if (f.total_reqs > 50 && f.errors / f.total_reqs > 0.05) {
+      const pct = Math.round(f.errors / f.total_reqs * 100);
+      items.push({ type: 'error', icon: '&#9888;',
+        msg: `Frontend <strong>${esc(f.name)}</strong> has a high error rate: <strong>${pct}%</strong> of requests are failing.` });
+    }
+  });
+
+  const totalReqs = frontends.reduce((s, f) => s + (f.total_reqs || 0), 0);
+  if (frontends.length > 0 && totalReqs === 0) {
+    items.push({ type: 'info', icon: '&#8505;',
+      msg: 'No traffic yet — the load balancer is idle and waiting for connections.' });
+  }
+
+  if (items.length === 0) {
+    items.push({ type: 'ok', icon: '&#10003;',
+      msg: 'All backends are healthy and no issues detected.' });
+  }
+
+  return items;
+}
+
+function renderRecommendations(frontends, pools) {
+  const panel = document.getElementById('recommendationsPanel');
+  const items = computeRecommendations(frontends, pools);
+  panel.innerHTML = items.map(item =>
+    `<div class="rec-item ${item.type}"><span class="rec-icon">${item.icon}</span><span>${item.msg}</span></div>`
+  ).join('');
 }
 
 // ── Render traffic charts ────────────────────────────────────────────────────
@@ -558,8 +763,6 @@ function renderTrafficCharts(frontends) {
     container.innerHTML = '<div class="chart-card" style="color:var(--sub);font-size:13px">No frontends configured.</div>';
     return;
   }
-
-  // Build HTML with stable canvas IDs.
   container.innerHTML = frontends.map(f => {
     const id  = 'fc-' + safeId(f.name);
     const rps = f.reqs_per_sec || 0;
@@ -569,8 +772,6 @@ function renderTrafficCharts(frontends) {
       <canvas id="${id}"></canvas>
     </div>`;
   }).join('');
-
-  // Draw sparklines immediately after setting innerHTML.
   frontends.forEach(f => {
     const canvas = document.getElementById('fc-' + safeId(f.name));
     if (canvas) drawSparkline(canvas, frontendHist[f.name] || [], '#e94560');
@@ -609,7 +810,6 @@ function renderPools(pools) {
     grid.innerHTML = '<div class="card empty">No backend pools configured.</div>';
     return;
   }
-
   grid.innerHTML = pools.map(p => {
     const backends = p.backends || [];
     const rows = backends.map(b => {
@@ -624,7 +824,6 @@ function renderPools(pools) {
         <td><canvas id="${sparkId}" width="80" height="28"></canvas></td>
       </tr>`;
     }).join('');
-
     return `<div class="card">
       <div class="pool-header">
         <span class="pool-title">${esc(p.name)}</span>
@@ -643,8 +842,6 @@ function renderPools(pools) {
       </div>
     </div>`;
   }).join('');
-
-  // Draw backend sparklines after rebuilding HTML.
   pools.forEach(p => {
     (p.backends || []).forEach(b => {
       const canvas = document.getElementById('bk-' + safeId(b.address));
@@ -655,8 +852,17 @@ function renderPools(pools) {
 
 // ── Main render ──────────────────────────────────────────────────────────────
 
+let lastConfigVersion = -1;
+
 function render(data) {
   document.getElementById('uptime').textContent = data.uptime || '—';
+
+  // Detect hot-reload and show toast.
+  const cv = data.config_version || 0;
+  if (lastConfigVersion >= 0 && cv > lastConfigVersion) {
+    showToast('&#10003; Config reloaded — changes applied');
+  }
+  lastConfigVersion = cv;
 
   const frontends = data.frontends || [];
   const pools     = data.pools     || [];
@@ -675,6 +881,7 @@ function render(data) {
   setNum(document.getElementById('totalReqs'),   totalReqs);
   setNum(document.getElementById('totalErrors'), totalErrors);
 
+  renderRecommendations(frontends, pools);
   renderTrafficCharts(frontends);
   renderFrontends(frontends);
   renderPools(pools);
@@ -724,7 +931,6 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
-
     if (btn.dataset.tab === 'config') loadConfig();
   });
 });
@@ -760,7 +966,7 @@ document.getElementById('configSaveBtn').addEventListener('click', async () => {
       body,
     });
     if (!res.ok) throw new Error(await res.text());
-    setStatus('Saved and applied', false);
+    setStatus('Saved — hot-reload triggered', false);
   } catch (e) {
     setStatus('Save failed: ' + e.message, true);
   }
@@ -768,7 +974,6 @@ document.getElementById('configSaveBtn').addEventListener('click', async () => {
 
 document.getElementById('configReloadBtn').addEventListener('click', loadConfig);
 
-// Tab indent in textarea.
 configEditor.addEventListener('keydown', e => {
   if (e.key === 'Tab') {
     e.preventDefault();
@@ -778,6 +983,121 @@ configEditor.addEventListener('keydown', e => {
     configEditor.selectionStart = configEditor.selectionEnd = s + 2;
   }
 });
+
+// ── Guided tour ──────────────────────────────────────────────────────────────
+
+const tourSteps = [
+  {
+    target:  null,
+    title:   'Welcome to Load Balancer Dashboard',
+    body:    'This quick tour walks you through every section of the dashboard. Use <strong>Next</strong> to advance or <strong>Skip</strong> to exit at any time.',
+  },
+  {
+    target:  '#overviewSection',
+    title:   'Overview Stats',
+    body:    'Four live counters — active connections, requests per second, total requests, and total errors — aggregated across all frontends. Numbers flash green when rising and red when falling.',
+  },
+  {
+    target:  '#recommendationsSection',
+    title:   'Recommendations',
+    body:    'Automatic health insights: unhealthy backends, high error rates, single-backend pools with no redundancy, and overall status. Updated every second.',
+  },
+  {
+    target:  '#trafficSection',
+    title:   'Traffic Sparklines',
+    body:    'One sparkline per frontend showing requests/sec over the last 60 seconds. Lets you spot traffic spikes and drops at a glance.',
+  },
+  {
+    target:  '#frontendsSection',
+    title:   'Frontends',
+    body:    'Each row is a listening port (HTTP, HTTPS, gRPC, TCP, or UDP). The <em>Status</em> column turns red when any errors have been recorded on that frontend.',
+  },
+  {
+    target:  '#poolsSection',
+    title:   'Backend Pools',
+    body:    'Each card is a backend pool with its load-balancing algorithm (round-robin, least-connections, weighted, or consistent-hash). Per-backend health dots, connection counts, and per-second sparklines let you catch imbalances early.',
+  },
+  {
+    target:  'button[data-tab="config"]',
+    title:   'Config Editor',
+    body:    'Click <strong>Config Editor</strong> to edit the YAML live. Saving writes to disk and triggers an instant hot-reload — backends, weights, and algorithms update without restarting the process.',
+  },
+];
+
+let tourStep   = 0;
+let tourActive = false;
+let tourHighlighted = null;
+
+function tourClearHighlight() {
+  if (tourHighlighted) {
+    tourHighlighted.classList.remove('tour-highlight');
+    tourHighlighted = null;
+  }
+}
+
+function tourShow(step) {
+  const s        = tourSteps[step];
+  const panel    = document.getElementById('tourPanel');
+  const backdrop = document.getElementById('tourBackdrop');
+
+  tourClearHighlight();
+
+  if (s.target) {
+    const el = document.querySelector(s.target);
+    if (el) {
+      el.classList.add('tour-highlight');
+      tourHighlighted = el;
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }
+
+  document.getElementById('tourEyebrow').textContent = `Step ${step + 1} of ${tourSteps.length}`;
+  document.getElementById('tourTitle').textContent   = s.title;
+  document.getElementById('tourBody').innerHTML      = s.body;
+
+  // Dots.
+  const dots = document.getElementById('tourDots');
+  dots.innerHTML = tourSteps.map((_, i) =>
+    `<div class="tour-dot${i === step ? ' active' : ''}"></div>`
+  ).join('');
+
+  document.getElementById('tourPrevBtn').disabled  = step === 0;
+  document.getElementById('tourNextBtn').textContent =
+    step === tourSteps.length - 1 ? 'Done' : 'Next \u2192';
+
+  panel.classList.add('visible');
+  backdrop.classList.add('visible');
+}
+
+function startTour() {
+  // Switch to dashboard tab first.
+  document.querySelector('.tab-btn[data-tab="dashboard"]').click();
+  tourStep   = 0;
+  tourActive = true;
+  tourShow(0);
+}
+
+function endTour() {
+  tourClearHighlight();
+  document.getElementById('tourPanel').classList.remove('visible');
+  document.getElementById('tourBackdrop').classList.remove('visible');
+  tourActive = false;
+}
+
+function tourMove(delta) {
+  const next = tourStep + delta;
+  if (next < 0 || next >= tourSteps.length) { endTour(); return; }
+  tourStep = next;
+  tourShow(tourStep);
+}
+
+document.getElementById('tourBtn').addEventListener('click', startTour);
+document.getElementById('tourPrevBtn').addEventListener('click', () => tourMove(-1));
+document.getElementById('tourNextBtn').addEventListener('click', () => tourMove(1));
+document.getElementById('tourCloseBtn').addEventListener('click', endTour);
+
+// Dismiss tour on backdrop click.
+document.getElementById('tourBackdrop').addEventListener('click', endTour);
 </script>
 </body>
 </html>

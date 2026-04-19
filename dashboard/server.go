@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -52,9 +53,10 @@ type FrontendInfo struct {
 
 // DashboardPayload is the JSON pushed to WebSocket clients each second.
 type DashboardPayload struct {
-	Uptime    string         `json:"uptime"`
-	Frontends []FrontendInfo `json:"frontends"`
-	Pools     []PoolInfo     `json:"pools"`
+	Uptime        string         `json:"uptime"`
+	ConfigVersion int64          `json:"config_version"`
+	Frontends     []FrontendInfo `json:"frontends"`
+	Pools         []PoolInfo     `json:"pools"`
 }
 
 // Pool groups pool metadata with its balancer for the dashboard.
@@ -66,15 +68,17 @@ type Pool struct {
 
 // Server serves the web dashboard and pushes live updates via WebSocket.
 type Server struct {
-	port       int
-	configPath string
-	store      *metrics.Store
-	pools      []Pool
-	start      time.Time
-	upgrader   websocket.Upgrader
-	server     *http.Server
-	clients    map[*websocket.Conn]struct{}
-	clientsMu  sync.Mutex
+	port          int
+	configPath    string
+	store         *metrics.Store
+	start         time.Time
+	upgrader      websocket.Upgrader
+	server        *http.Server
+	clients       map[*websocket.Conn]struct{}
+	clientsMu     sync.Mutex
+	pools         []Pool
+	poolsMu       sync.RWMutex
+	configVersion atomic.Int64
 }
 
 // NewServer creates a dashboard Server.
@@ -91,6 +95,19 @@ func NewServer(port int, store *metrics.Store, pools []Pool, configPath string) 
 		clients: make(map[*websocket.Conn]struct{}),
 	}
 	return s
+}
+
+// SetPools replaces the pool list (called on config hot-reload).
+func (s *Server) SetPools(pools []Pool) {
+	s.poolsMu.Lock()
+	s.pools = pools
+	s.poolsMu.Unlock()
+}
+
+// NotifyReload increments the config version counter so connected browsers
+// can detect and announce a successful hot-reload.
+func (s *Server) NotifyReload() {
+	s.configVersion.Add(1)
 }
 
 // Start begins serving the dashboard.
@@ -182,10 +199,8 @@ func (s *Server) wsHandler(w http.ResponseWriter, r *http.Request) {
 		conn.Close()
 	}()
 
-	// Send initial payload immediately.
 	s.sendPayload(conn)
 
-	// Keep connection alive; reads will detect client disconnect.
 	for {
 		_, _, err := conn.ReadMessage()
 		if err != nil {
@@ -254,8 +269,12 @@ func (s *Server) buildPayload() DashboardPayload {
 		})
 	}
 
-	pools := make([]PoolInfo, 0, len(s.pools))
-	for _, p := range s.pools {
+	s.poolsMu.RLock()
+	currentPools := s.pools
+	s.poolsMu.RUnlock()
+
+	pools := make([]PoolInfo, 0, len(currentPools))
+	for _, p := range currentPools {
 		var backends []BackendInfo
 		for _, b := range p.Balancer.All() {
 			backends = append(backends, BackendInfo{
@@ -275,8 +294,9 @@ func (s *Server) buildPayload() DashboardPayload {
 	}
 
 	return DashboardPayload{
-		Uptime:    uptime,
-		Frontends: frontends,
-		Pools:     pools,
+		Uptime:        uptime,
+		ConfigVersion: s.configVersion.Load(),
+		Frontends:     frontends,
+		Pools:         pools,
 	}
 }
